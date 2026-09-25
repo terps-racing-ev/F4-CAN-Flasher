@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read bootloader metadata or change its CAN board ID using a PEAK PCAN adapter.
 
-Install the dependency with ``python -m pip install -r tools/requirements.txt``.
+Install the dependency with ``python -m pip install -r requirements.txt``.
 The PEAK PCAN Basic driver must also be installed on the host machine.
 """
 
@@ -184,10 +184,10 @@ def set_board_id(bus, current_id: int, requested_id: int, timeout: float) -> Non
         raise ToolError(f"Device returned unknown set-ID status {status}.")
 
 
-def start_flash(bus, board_id: int, timeout: float) -> int:
+def start_flash(bus, board_id: int, image_version: int, timeout: float) -> int:
     command_id = CAN_START_FLASH_ID + board_id
     reply_id = CAN_REPLY_BASE + board_id
-    send_frame(bus, command_id, b"")
+    send_frame(bus, command_id, struct.pack("<I", image_version))
     reply = receive_reply(bus, reply_id, timeout)
 
     if len(reply.data) != 8:
@@ -311,7 +311,7 @@ def write_started_flash(bus, board_id: int, image: bytes, slot: int,
 
 
 def flash_images(bus, board_id: int, bank_a_path: Path, bank_b_path: Path,
-                 timeout: float) -> None:
+                 image_version: int, timeout: float) -> None:
     # Validate both paths before starting a transaction, so a missing or
     # invalid second image cannot leave the device with only one bank updated.
     images = {
@@ -320,7 +320,7 @@ def flash_images(bus, board_id: int, bank_a_path: Path, bank_b_path: Path,
     }
     written_slots = set()
     while len(written_slots) < 2:
-        slot = start_flash(bus, board_id, timeout)
+        slot = start_flash(bus, board_id, image_version, timeout)
         if slot in written_slots:
             raise ToolError(
                 f"Device selected slot {'A' if slot == 0 else 'B'} twice; "
@@ -338,6 +338,20 @@ def board_id_arg(value: str) -> int:
     if not 0 <= board_id < BOARD_COUNT:
         raise argparse.ArgumentTypeError("board ID must be from 0 through 31")
     return board_id
+
+
+def image_version_arg(value: str) -> int:
+    try:
+        image_version = int(value, 0)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "image version must be an integer"
+        ) from exc
+    if not 0 <= image_version <= 0xFFFFFFFF:
+        raise argparse.ArgumentTypeError(
+            "image version must be from 0 through 0xFFFFFFFF"
+        )
+    return image_version
 
 
 def add_connection_options(parser: argparse.ArgumentParser) -> None:
@@ -383,12 +397,18 @@ def make_parser() -> argparse.ArgumentParser:
         "start-flash", help="select and return the target flash slot"
     )
     start_parser.add_argument("--board-id", required=True, type=board_id_arg)
+    start_parser.add_argument("--image-version", required=True,
+                              type=image_version_arg,
+                              help="32-bit firmware version saved for the selected slot")
     add_connection_options(start_parser)
 
     flash_parser = commands.add_parser(
         "flash", help="erase and write both bank images"
     )
     flash_parser.add_argument("--board-id", required=True, type=board_id_arg)
+    flash_parser.add_argument("--image-version", required=True,
+                              type=image_version_arg,
+                              help="32-bit firmware version saved for both slots")
     flash_parser.add_argument("--bank-a", required=True, type=Path,
                               help="binary linked for flash bank A")
     flash_parser.add_argument("--bank-b", required=True, type=Path,
@@ -413,10 +433,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.command == "set-board-id":
                 set_board_id(bus, args.board_id, args.new_board_id, args.timeout)
             elif args.command == "start-flash":
-                start_flash(bus, args.board_id, args.timeout)
+                start_flash(bus, args.board_id, args.image_version, args.timeout)
             else:
                 flash_images(bus, args.board_id, args.bank_a, args.bank_b,
-                             args.timeout)
+                             args.image_version, args.timeout)
         finally:
             bus.shutdown()
     except ToolError as exc:

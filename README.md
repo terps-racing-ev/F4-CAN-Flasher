@@ -3,28 +3,30 @@
 Install `python-can` and the PEAK PCAN Basic driver:
 
 ```powershell
-python -m pip install -r tools/requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 Read all 19 words of the metadata record:
 
 ```powershell
-python tools/bootloader_config.py read --board-id 1
+python flasher.py read --board-id 1
 ```
 
 Set a device's board ID (the `--board-id` value is its current ID):
 
 ```powershell
-python tools/bootloader_config.py set-board-id --board-id 1 --new-board-id 2
+python flasher.py set-board-id --board-id 1 --new-board-id 2
 ```
 
 Start the flash state and report the selected target slot:
 
 ```powershell
-python tools/bootloader_config.py start-flash --board-id 1
+python flasher.py start-flash --board-id 1 --image-version 42
 ```
 
-This sends an extended CAN data frame on `0x19010000 + board_id` with DLC 0.
+This sends an extended CAN data frame on `0x19010000 + board_id` with DLC 4:
+the required 32-bit image version in little endian byte order. The bootloader
+saves it as `image_version` for the selected slot in the metadata record.
 The board replies on `0x19000000 + board_id` with its ID and selected slot
 (`0` = A, `1` = B), then enters `FLASHING`.
 
@@ -34,8 +36,10 @@ flash transactions, waiting for an ACK after every 8-byte frame, then sends each
 image's size and CRC-32:
 
 ```powershell
-python tools/bootloader_config.py flash --board-id 1 --bank-a .\firmware_a.bin --bank-b .\firmware_b.bin
+python flasher.py flash --board-id 1 --image-version 42 --bank-a .\firmware_a.bin --bank-b .\firmware_b.bin
 ```
+
+The `flash` command records the same image version for both slots.
 
 For each transaction, the firmware erases the inactive slot, programs and
 verifies each frame, then checks the final image CRC before marking the slot
