@@ -312,22 +312,14 @@ def write_started_flash(bus, board_id: int, image: bytes, slot: int,
 
 def flash_images(bus, board_id: int, bank_a_path: Path, bank_b_path: Path,
                  image_version: int, timeout: float) -> None:
-    # Validate both paths before starting a transaction, so a missing or
-    # invalid second image cannot leave the device with only one bank updated.
+    # The bootloader chooses the inactive slot, so both slot-linked images
+    # must be available before asking it which one it will write.
     images = {
         0: load_image(bank_a_path),
         1: load_image(bank_b_path),
     }
-    written_slots = set()
-    while len(written_slots) < 2:
-        slot = start_flash(bus, board_id, image_version, timeout)
-        if slot in written_slots:
-            raise ToolError(
-                f"Device selected slot {'A' if slot == 0 else 'B'} twice; "
-                "cannot write both bank images."
-            )
-        write_started_flash(bus, board_id, images[slot], slot, timeout)
-        written_slots.add(slot)
+    slot = start_flash(bus, board_id, image_version, timeout)
+    write_started_flash(bus, board_id, images[slot], slot, timeout)
 
 
 def board_id_arg(value: str) -> int:
@@ -378,7 +370,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Read bootloader config, set its board ID, start flash mode, "
-            "or write both bank images over PEAK PCAN."
+            "or write the selected bank image over PEAK PCAN."
         )
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -403,12 +395,12 @@ def make_parser() -> argparse.ArgumentParser:
     add_connection_options(start_parser)
 
     flash_parser = commands.add_parser(
-        "flash", help="erase and write both bank images"
+        "flash", help="erase and write the selected bank image"
     )
     flash_parser.add_argument("--board-id", required=True, type=board_id_arg)
     flash_parser.add_argument("--image-version", required=True,
                               type=image_version_arg,
-                              help="32-bit firmware version saved for both slots")
+                              help="32-bit firmware version saved for the selected slot")
     flash_parser.add_argument("--bank-a", required=True, type=Path,
                               help="binary linked for flash bank A")
     flash_parser.add_argument("--bank-b", required=True, type=Path,

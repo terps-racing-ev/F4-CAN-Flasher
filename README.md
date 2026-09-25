@@ -30,20 +30,20 @@ saves it as `image_version` for the selected slot in the metadata record.
 The board replies on `0x19000000 + board_id` with its ID and selected slot
 (`0` = A, `1` = B), then enters `FLASHING`.
 
-Write both bank images. Each binary must be linked for its named slot; the tool
-uses the slot returned by the bootloader to send the matching image. It runs two
-flash transactions, waiting for an ACK after every 8-byte frame, then sends each
-image's size and CRC-32:
+Write the inactive bank selected by the bootloader. Supply both bank images
+because the tool does not know which slot is inactive until the device replies;
+each binary must be linked for its named slot. The tool sends only the matching
+image in one flash transaction, waiting for an ACK after every 8-byte frame,
+then sends that image's size and CRC-32:
 
 ```powershell
 python flasher.py flash --board-id 1 --image-version 42 --bank-a .\firmware_a.bin --bank-b .\firmware_b.bin
 ```
 
-The `flash` command records the same image version for both slots.
-
-For each transaction, the firmware erases the inactive slot, programs and
-verifies each frame, then checks the final image CRC before marking the slot
-valid in metadata. A progress bar tracks bytes acknowledged by the device,
+The firmware erases the inactive slot, programs and verifies each frame, then
+checks the final image CRC before marking the slot valid and active in metadata.
+Any previously valid image in the other slot remains available as a fallback.
+A progress bar tracks bytes acknowledged by the device,
 elapsed transfer time, and average throughput in decimal KB/s. Each image is
 limited to 256 KiB, matching either two-sector slot.
 
