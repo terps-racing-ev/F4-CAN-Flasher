@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read bootloader metadata or change its CAN board ID using a PEAK PCAN adapter.
 
-Install the dependency with ``python -m pip install -r requirements.txt``.
+Install the dependency with ``python -m pip install -r tools/requirements.txt``.
 The PEAK PCAN Basic driver must also be installed on the host machine.
 """
 
@@ -18,6 +18,7 @@ from typing import Sequence
 
 CAN_READ_RECORD_ID = 0x19040000
 CAN_SET_BOARD_ID_ID = 0x19050000
+CAN_READ_VERSION_ID = 0x19060000
 CAN_START_FLASH_ID = 0x19010000
 CAN_DATA_ID = 0x19020000
 CAN_FINISH_ID = 0x19030000
@@ -146,10 +147,24 @@ def read_record(bus, board_id: int, timeout: float) -> None:
     for index in range(WORD_COUNT):
         _, value = read_word(bus, board_id, index, timeout)
         values.append(value)
+    bootloader_version = read_bootloader_version(bus, board_id, timeout)
 
     print(f"Configuration record for board ID {board_id}:")
     for name, value in zip(WORD_NAMES, values):
         print(f"  {name:18} 0x{value:08X} ({value})")
+    print(f"Bootloader version: {bootloader_version}")
+
+
+def read_bootloader_version(bus, board_id: int, timeout: float) -> int:
+    command_id = CAN_READ_VERSION_ID + board_id
+    reply_id = CAN_REPLY_BASE + board_id
+    send_frame(bus, command_id, b"")
+    reply = receive_reply(bus, reply_id, timeout)
+
+    if len(reply.data) != 4:
+        raise ToolError(f"Version reply has DLC {len(reply.data)}; expected 4.")
+
+    return struct.unpack("<I", reply.data)[0]
 
 
 def set_board_id(bus, current_id: int, requested_id: int, timeout: float) -> None:
@@ -370,14 +385,22 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Read bootloader config, set its board ID, start flash mode, "
-            "or write the selected bank image over PEAK PCAN."
+            "read its version, or write the selected bank image over PEAK PCAN."
         )
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    read_parser = commands.add_parser("read", help="read all 19 metadata words")
+    read_parser = commands.add_parser(
+        "read", help="read the newest metadata record and bootloader version"
+    )
     read_parser.add_argument("--board-id", required=True, type=board_id_arg)
     add_connection_options(read_parser)
+
+    version_parser = commands.add_parser(
+        "version", help="read the bootloader version"
+    )
+    version_parser.add_argument("--board-id", required=True, type=board_id_arg)
+    add_connection_options(version_parser)
 
     set_parser = commands.add_parser("set-board-id", help="save a new board ID")
     set_parser.add_argument("--board-id", required=True, type=board_id_arg,
@@ -422,6 +445,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             if args.command == "read":
                 read_record(bus, args.board_id, args.timeout)
+            elif args.command == "version":
+                version = read_bootloader_version(bus, args.board_id, args.timeout)
+                print(f"Bootloader version: {version}")
             elif args.command == "set-board-id":
                 set_board_id(bus, args.board_id, args.new_board_id, args.timeout)
             elif args.command == "start-flash":

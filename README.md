@@ -6,11 +6,21 @@ Install `python-can` and the PEAK PCAN Basic driver:
 python -m pip install -r requirements.txt
 ```
 
-Read all 19 words of the metadata record:
+Read the newest metadata record and bootloader version:
 
 ```powershell
 python flasher.py read --board-id 1
 ```
+
+Read only the bootloader version:
+
+```powershell
+python flasher.py version --board-id 1
+```
+
+This sends a zero-length extended CAN data frame on `0x19060000 + board_id`.
+The bootloader replies on `0x19000000 + board_id` with the version as a
+32-bit little endian value.
 
 Set a device's board ID (the `--board-id` value is its current ID):
 
@@ -43,9 +53,9 @@ python flasher.py flash --board-id 1 --image-version 42 --bank-a .\firmware_a.bi
 The firmware erases the inactive slot, programs and verifies each frame, then
 checks the final image CRC before marking the slot valid and active in metadata.
 Any previously valid image in the other slot remains available as a fallback.
-A progress bar tracks bytes acknowledged by the device,
-elapsed transfer time, and average throughput in decimal KB/s. Each image is
-limited to 256 KiB, matching either two-sector slot.
+A progress bar tracks bytes acknowledged by the device, elapsed transfer time,
+and average throughput in decimal KB/s. Each image is limited to 256 KiB,
+matching either two-sector slot.
 
 After five seconds without a bootloader command, the device checks the active
 image's CRC and vector table and jumps to it. If that image is invalid, it
